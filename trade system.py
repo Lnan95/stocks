@@ -2,9 +2,11 @@
 import pandas as pd
 from ntpdatetime import now
 import numpy as np
+import copy
 
 # 数字转str，逆操作int()
 def To_str(series_number,length=10):
+
     tmp = str(series_number)
     return '0'*(length-len(tmp))+tmp
 
@@ -27,7 +29,10 @@ class stock:
         else:
             print("出售挂单", self.order_sell_list)
     # 下单
-    def order_buy(self,price,quantity):
+    def order_buy(self,account,price,quantity):
+        # 加入serial_number
+        Serial_number(account,1,self.name,price,quantity)
+        # 以后加入：新的撮合交易系统（按时间顺序）
         if self.order_buy_list.get(price) == None:
             self.order_buy_list.setdefault(price,quantity)
             self.print()
@@ -35,7 +40,8 @@ class stock:
         else:
             self.order_buy_list[price] = self.order_buy_list[price] + quantity
             self.print()
-    def order_sell(self,price,quantity):
+    def order_sell(self,account,price,quantity):
+        Serial_number(account, 0, self.name, price, quantity)
         if self.order_sell_list.get(price) == None:
             self.order_sell_list.setdefault(price,quantity)
             self.print()
@@ -89,42 +95,56 @@ class account:
             print("资金不足")
             return
         self.wealth -= price * quantity
-        eval(stock).order_buy(price,quantity)
+        eval(stock).order_buy(self.name,price,quantity)
         # self.stocks.setdefault(name,quantity)
-    def sell(self):
-        return
+    def sell(self,stock,price,quantity):
+        # 交易成功时记得添加或删除持有股票
+        if stock in self.stocks:
+            if quantity <= self.stocks[stock]:
+                self.stocks[stock] -= quantity
+                eval(stock).order_sell(self.name, price, quantity)
+            else:
+                print('持有股票股份不足')
+        else:
+            print("没有该股票股份")
+            return
     def done(self):
         return
 # 买单与卖单的撮合
 class Serial:
-    serial_detail = {}
+    detail = pd.DataFrame()
+    # columns=['serial_number','account','type','stock','price','quantity','time','done','rest_quantity','done_time']
+    # detail.append(a,ignore_index=True)
+    # a = pd.Series([123,'account','type','stock','price','quantity','time','rest_quantity','done_time'])
     serial_number = 0
     done_serial_number = 0
     def trade(self):
         self.serial_number += 1
-        return self.serial_number
+        return self.serial_number-1
     def done(self):
         self.done_serial_number += 1
-        return self.done_serial_number
+        return self.done_serial_number-1
+    def detail_print(self):
+        tmp = self.detail.copy() # DF的深层拷贝
+        tmp.columns = ['serial_number', 'account', 'type', 'stock', 'price', 'quantity', 'time', 'rest_quantity', 'done_time']
+        tmp.type = tmp.type.map({1: '买', 0: '卖',-1:'取消'})
+        tmp['serial_number'] = tmp['serial_number'].astype('int')
+        print(tmp)
 serial_centre = Serial()
 
 # done -1取消 0挂单中 1成交
-# {'serial_number':['account','type','stock','price','quantity','time','done','rival_series','done_time']}
+# {'serial_number':['account','type','stock','price','quantity','time','rest_quantity','done_time']}
 class Serial_number():
     def __init__(self,account,type,stock,price,quantity):
         serial_number = serial_centre.trade()
-        serial_centre.serial_detail[serial_number] = [account, type, stock, price, quantity,
-                                                          now()[0].strftime('%d-%m-%Y %H:%M:%S'), 0, None, None]
+        serial_centre.detail = serial_centre.detail.append(
+            pd.Series([serial_number,account, type, stock, price, quantity,now()[0].strftime('%d-%m-%Y %H:%M:%S'),quantity, None]),ignore_index=True)
         eval(account).history.append(serial_number)
     # 交易完成的单号记录
     def done(self,serial_number1,serial_number2):
         tmp = now()[0].strftime('%d-%m-%Y %H:%M:%S')
-        serial_centre.serial_detail[serial_number1][7] = serial_number2
-        serial_centre.serial_detail[serial_number1][8] = tmp
-        serial_centre.serial_detail[serial_number1][6] = 1
-        serial_centre.serial_detail[serial_number2][7] = serial_number1
-        serial_centre.serial_detail[serial_number2][8] = tmp
-        serial_centre.serial_detail[serial_number2][6] = 1
+        serial_centre.detail.ix[serial_number1-1, 6] = tmp
+        serial_centre.detail.ix[serial_number2-1, 6] = tmp
     def married(self,stock):
         # type交易类型是买还是卖
         if len(eval(stock).order_sell_list.keys())==0 or len(eval(stock).order_buy_list.keys())==0:
@@ -181,8 +201,12 @@ if __name__ == "__main__":
         zcyl.order_buy(0.9, 520)
         zcyl.order_buy(1.2, 520)
 
+    zcyl = stock('zcyl')
     lsn = account('lsn')
+    lsn.wealth = 10000000
     lrq = account('lrq')
 
-    Serial_number('lsn', 0, 'zcyl', 20, 200)
-
+    lsn.buy('zcyl',20,200)
+    lsn.stocks = {'zcyl':500}
+    lsn.sell('zcyl', 20, 200)
+    serial_centre.detail_print()
